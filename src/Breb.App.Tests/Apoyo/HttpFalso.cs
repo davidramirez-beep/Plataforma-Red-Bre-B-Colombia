@@ -32,7 +32,8 @@ internal sealed class HandlerFalso : HttpMessageHandler
             request.Headers.Authorization?.Scheme,
             request.Headers.Authorization?.Parameter,
             request.Headers.Contains("Idempotency-Key"),
-            cuerpo));
+            cuerpo,
+            request.RequestUri?.ToString() ?? ""));
 
         if (Falla is not null)
             throw Falla;
@@ -61,7 +62,8 @@ internal sealed record SolicitudVista(
     string? Esquema,
     string? Token,
     bool TraeClaveDeIdempotencia,
-    string? Cuerpo);
+    string? Cuerpo,
+    string UriAbsoluta = "");
 
 internal static class ClienteFalso
 {

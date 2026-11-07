@@ -10,6 +10,7 @@ public record RespuestaToken(string Token, DateTimeOffset Expira, string Tipo, s
 
 public record RespuestaSaldo(Guid CuentaId, decimal SaldoDisponible, decimal SaldoRetenido);
 
-// POST /cuentas/{id}/retener responde { transferenciaId, montoUVB }.
-// No hay clave de idempotencia en el contrato: el servidor inventa el id.
-public record RespuestaRetencion(Guid TransferenciaId, decimal MontoUVB);
+// POST /cuentas/{id}/retener responde { transferenciaId, montoUVB, repetida }.
+// Repetida=true: el servidor ya tenía esta llave y no apartó otra vez.
+// Si el JSON no trae el campo (API anterior), queda en false.
+public record RespuestaRetencion(Guid TransferenciaId, decimal MontoUVB, bool Repetida = false);

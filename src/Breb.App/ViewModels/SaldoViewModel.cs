@@ -11,12 +11,14 @@ public partial class SaldoViewModel : ViewModelBase
     private readonly ClienteBrebApi _api;
     private readonly IAlmacenSesion _almacen;
     private readonly INavegacion _nav;
+    private readonly ColaOperaciones _cola;
 
-    public SaldoViewModel(ClienteBrebApi api, IAlmacenSesion almacen, INavegacion nav)
+    public SaldoViewModel(ClienteBrebApi api, IAlmacenSesion almacen, INavegacion nav, ColaOperaciones cola)
     {
         _api = api;
         _almacen = almacen;
         _nav = nav;
+        _cola = cola;
         Estado = "Sin consultar";
         SesionTexto = MensajesDeApi.SinSesion;
     }
@@ -29,6 +31,14 @@ public partial class SaldoViewModel : ViewModelBase
 
     [ObservableProperty]
     private string sesionTexto = string.Empty;
+
+    [ObservableProperty]
+    private string avisoPendientes = string.Empty;
+
+    public bool HayAvisoPendientes => !string.IsNullOrWhiteSpace(AvisoPendientes);
+
+    partial void OnAvisoPendientesChanged(string value) =>
+        OnPropertyChanged(nameof(HayAvisoPendientes));
 
     protected override void AlCambiarCargando()
     {
@@ -55,6 +65,11 @@ public partial class SaldoViewModel : ViewModelBase
             var sesion = await GuardiaDeSesion.ParaPantallaAsync(_almacen, _nav, DateTimeOffset.UtcNow);
             if (sesion is null) return;
             SesionTexto = $"{sesion.Usuario} · rol {sesion.Rol}";
+
+            var pendientes = await _cola.PendientesAsync();
+            AvisoPendientes = pendientes.Count == 0
+                ? string.Empty
+                : $"Hay {pendientes.Count} transferencia(s) guardada(s) en el teléfono. Abra Transferir: se reenvían con la misma llave.";
         }
         catch (ExcepcionAlmacenSeguro ex)
         {

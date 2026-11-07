@@ -19,7 +19,13 @@
   <ItemGroup>
     <Compile Include="..\Breb.App\Modelos\Contratos.cs" Link="App\Contratos.cs" />
     <Compile Include="..\Breb.App\Modelos\CuentaDemo.cs" Link="App\CuentaDemo.cs" />
+    <Compile Include="..\Breb.App\Modelos\OperacionPendiente.cs" Link="App\OperacionPendiente.cs" />
     <Compile Include="..\Breb.App\Servicios\ClienteBrebApi.cs" Link="App\ClienteBrebApi.cs" />
+    <Compile Include="..\Breb.App\Servicios\ColaOperaciones.cs" Link="App\ColaOperaciones.cs" />
+    <Compile Include="..\Breb.App\Servicios\EleccionDeDireccion.cs" Link="App\EleccionDeDireccion.cs" />
+    <Compile Include="..\Breb.App\Servicios\DireccionActiva.cs" Link="App\DireccionActiva.cs" />
+    <Compile Include="..\Breb.App\Servicios\DireccionGuardada.cs" Link="App\DireccionGuardada.cs" />
+    <Compile Include="..\Breb.App\Servicios\AjusteDeDireccion.cs" Link="App\AjusteDeDireccion.cs" />
     <Compile Include="..\Breb.App\Servicios\ExcepcionDeApi.cs" Link="App\ExcepcionDeApi.cs" />
     <Compile Include="..\Breb.App\Servicios\ExcepcionAlmacenSeguro.cs" Link="App\ExcepcionAlmacenSeguro.cs" />
     <Compile Include="..\Breb.App\Servicios\IBovedaSegura.cs" Link="App\IBovedaSegura.cs" />

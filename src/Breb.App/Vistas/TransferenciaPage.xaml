@@ -18,6 +18,15 @@
                    TextColor="Gray"
                    LineBreakMode="WordWrap"/>
 
+            <Label Text="{Binding DireccionTexto}"
+                   FontSize="12"
+                   TextColor="Gray"
+                   LineBreakMode="WordWrap"/>
+
+            <Label Text="{Binding PendientesTexto}"
+                   FontSize="14"
+                   LineBreakMode="WordWrap"/>
+
             <Label Text="La cuenta es la de las demos. El monto se aparta de ahí. Si el banco destino no confirma, vuelve solo en unos 15 segundos."
                    FontSize="13"
                    TextColor="Gray"
@@ -31,6 +40,15 @@
             <Button Text="Transferir"
                     Command="{Binding TransferirCommand}"
                     HorizontalOptions="Fill"/>
+
+            <Button Text="Reenviar lo pendiente"
+                    Command="{Binding ReintentarPendientesCommand}"
+                    HorizontalOptions="Fill"/>
+
+            <Label Text="Llave" FontSize="13" TextColor="Gray"/>
+            <Label Text="{Binding LlaveTexto}"
+                   FontSize="12"
+                   LineBreakMode="CharacterWrap"/>
 
             <ActivityIndicator IsRunning="{Binding Cargando}"
                                IsVisible="{Binding Cargando}"/>
@@ -60,6 +78,15 @@
                     </DataTrigger>
                 </Label.Triggers>
             </Label>
+
+            <Button Text="Actualizar saldo (ver confirmación)"
+                    Command="{Binding RefrescarSaldoCommand}"
+                    HorizontalOptions="Fill"/>
+
+            <Button Text="Descartar pendiente"
+                    Command="{Binding DescartarPendientesCommand}"
+                    IsVisible="{Binding HayPendientes}"
+                    HorizontalOptions="Fill"/>
 
             <Button Text="Volver a saldo"
                     Command="{Binding IrASaldoCommand}"

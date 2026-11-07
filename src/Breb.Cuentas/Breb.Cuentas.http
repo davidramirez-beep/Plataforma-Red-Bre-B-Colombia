@@ -26,7 +26,11 @@ Content-Type: application/json
 
 ### 4. Retener como operador -> 200
 # @name retencion
-POST {{api}}/cuentas/{{cuenta}}/retener?montoUVB=10
+POST {{api}}/cuentas/{{cuenta}}/retener?montoUVB=10&transferenciaId=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+Authorization: Bearer {{operador.response.body.token}}
+
+### 4c. La misma llave otra vez -> 200, repetida=true, el monto no se aparta de nuevo
+POST {{api}}/cuentas/{{cuenta}}/retener?montoUVB=10&transferenciaId=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
 Authorization: Bearer {{operador.response.body.token}}
 
 ### 4b. Retener más de lo disponible -> 400 (el dominio, no un 500)

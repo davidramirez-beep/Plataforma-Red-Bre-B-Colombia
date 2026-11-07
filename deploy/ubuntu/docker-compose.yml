@@ -1,0 +1,42 @@
+# PostgreSQL y RabbitMQ para el servidor de la demo (Ubuntu 22.04).
+# Los puertos quedan en 127.0.0.1: la API, en la misma máquina, sí los ve.
+# Un teléfono en la red no. No publique 5433, 5673 ni 15673.
+
+services:
+  rabbitmq:
+    image: masstransit/rabbitmq:latest
+    container_name: breb-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:15673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?defina RABBITMQ_USER en .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD en .env}
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/5672' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  postgres:
+    image: postgres:16
+    container_name: breb-postgres
+    restart: unless-stopped
+    command: >
+      postgres -c shared_preload_libraries=pg_stat_statements
+               -c pg_stat_statements.track=all
+               -c log_lock_waits=on
+               -c deadlock_timeout=1s
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:-brebcuentas}
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-brebcuentas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

@@ -18,6 +18,15 @@
                    TextColor="Gray"
                    LineBreakMode="WordWrap"/>
 
+            <Label Text="Dirección de la API" FontSize="13"/>
+            <Entry Text="{Binding DireccionTexto}"
+                   Placeholder="http://192.168.1.20:5080"
+                   Keyboard="Url"/>
+            <Label Text="En el emulador puede dejar 10.0.2.2. En el teléfono ponga la IP del servidor, puerto 5080. Se guarda en el aparato."
+                   FontSize="12"
+                   TextColor="Gray"
+                   LineBreakMode="WordWrap"/>
+
             <Label Text="Usuario" FontSize="13"/>
             <Entry Text="{Binding Usuario}" Placeholder="usuario"/>
 

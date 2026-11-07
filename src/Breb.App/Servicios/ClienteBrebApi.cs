@@ -37,27 +37,28 @@ public sealed class ClienteBrebApi(HttpClient http)
     }
 
     /// <summary>
-    /// Dispara la transferencia: POST /cuentas/{id}/retener?montoUVB=.
+    /// Dispara la transferencia: POST /cuentas/{id}/retener?montoUVB=&amp;transferenciaId=.
     ///
     /// Contrato real de Breb.Cuentas:
     ///   · el monto va en la query, no en el cuerpo;
     ///   · la política es Operador, o sea el claim de rol "operador"
     ///     (ana.operadora). Un token "consulta" responde 403, no 401;
-    ///   · no hay clave de idempotencia. El servidor inventa el
-    ///     transferenciaId. Llamar dos veces aparta el dinero dos veces.
-    ///     La idempotencia desde el cliente es de la semana 14.
+    ///   · <paramref name="transferenciaId"/> la pone el cliente y se reutiliza
+    ///     en cada reintento. Si el servidor ya la vio, responde la retención
+    ///     original con repetida=true y no aparta otra vez;
     ///   · no existe otro endpoint que "transfiera con destino". Este es el
     ///     que publica FondosRetenidos y nace la saga. El abono lo confirma
     ///     después POST /transferencias/{id}/confirmar-abono, y solo con el
     ///     rol banco. Sin esa confirmación, a los 15 s la saga compensa y
     ///     el dinero vuelve. El conciliador de 5 minutos no interviene ahí.
     /// </summary>
-    public async Task<RespuestaRetencion> RetenerAsync(Guid cuentaId, decimal montoUvb, string token)
+    public async Task<RespuestaRetencion> RetenerAsync(
+        Guid cuentaId, decimal montoUvb, string token, Guid transferenciaId)
     {
         var monto = Uri.EscapeDataString(montoUvb.ToString(CultureInfo.InvariantCulture));
         using var solicitud = new HttpRequestMessage(
             HttpMethod.Post,
-            $"/cuentas/{cuentaId}/retener?montoUVB={monto}");
+            $"/cuentas/{cuentaId}/retener?montoUVB={monto}&transferenciaId={transferenciaId}");
         solicitud.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         using var respuesta = await http.SendAsync(solicitud);

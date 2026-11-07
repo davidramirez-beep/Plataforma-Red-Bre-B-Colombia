@@ -51,7 +51,9 @@ internal static class Fabrica
         var boveda = new BovedaEnMemoria();
         var almacen = new AlmacenSesion(boveda);
         var nav = new NavegacionFalsa();
-        return (new LoginViewModel(api, almacen, nav), boveda, almacen, nav, http);
+        var direccion = new DireccionActiva("http://10.0.2.2:5080");
+        var guardada = new DireccionGuardada(boveda, direccion);
+        return (new LoginViewModel(api, almacen, nav, direccion, guardada), boveda, almacen, nav, http);
     }
 
     public static (SaldoViewModel Vm, AlmacenSesion Almacen, NavegacionFalsa Nav, HandlerFalso Http)
@@ -63,11 +65,12 @@ internal static class Fabrica
         if (sesion is not null)
             almacen.GuardarAsync(sesion.Token, sesion.Rol, sesion.Usuario).GetAwaiter().GetResult();
         var nav = new NavegacionFalsa();
-        return (new SaldoViewModel(api, almacen, nav), almacen, nav, http);
+        var cola = new ColaOperaciones(Carpeta());
+        return (new SaldoViewModel(api, almacen, nav, cola), almacen, nav, http);
     }
 
     public static (TransferenciaViewModel Vm, AlmacenSesion Almacen, NavegacionFalsa Nav, HandlerFalso Http)
-        Transferencia(SesionGuardada? sesion = null)
+        Transferencia(SesionGuardada? sesion = null, string? carpetaCola = null)
     {
         var (api, http) = ClienteFalso.Crear();
         var boveda = new BovedaEnMemoria();
@@ -75,6 +78,11 @@ internal static class Fabrica
         if (sesion is not null)
             almacen.GuardarAsync(sesion.Token, sesion.Rol, sesion.Usuario).GetAwaiter().GetResult();
         var nav = new NavegacionFalsa();
-        return (new TransferenciaViewModel(api, almacen, nav), almacen, nav, http);
+        var cola = new ColaOperaciones(carpetaCola ?? Carpeta());
+        var direccion = new DireccionActiva("http://10.0.2.2:5080");
+        return (new TransferenciaViewModel(api, almacen, nav, cola, direccion), almacen, nav, http);
     }
+
+    private static string Carpeta() =>
+        Path.Combine(Path.GetTempPath(), "breb-tests", Guid.NewGuid().ToString("N"));
 }

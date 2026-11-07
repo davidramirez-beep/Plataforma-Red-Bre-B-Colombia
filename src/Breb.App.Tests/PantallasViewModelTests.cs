@@ -148,10 +148,12 @@ public class PantallasViewModelTests
         Assert.Equal(ViewModelBase.FormatoUvb(4990m), vm.SaldoTexto);
         Assert.Equal(ViewModelBase.FormatoUvb(10m), vm.SaldoRetenidoTexto);
         Assert.Equal(2, http.Solicitudes.Count);
-        Assert.Contains("/retener?montoUVB=10", http.Solicitudes[0].Ruta);
+        Assert.Contains("/retener?montoUVB=10&transferenciaId=", http.Solicitudes[0].Ruta);
         Assert.Equal("abc", http.Solicitudes[0].Token);
         Assert.False(http.Solicitudes[0].TraeClaveDeIdempotencia);
+        Assert.True(Guid.TryParse(http.Solicitudes[0].Ruta.Split("transferenciaId=")[1], out _));
         Assert.DoesNotContain(http.Solicitudes, s => s.Ruta == "/token");
+        Assert.Empty(await vm.Cola.PendientesAsync());
     }
 
     [Fact]
@@ -167,6 +169,7 @@ public class PantallasViewModelTests
             vm.Estado);
         Assert.Equal(string.Empty, vm.ResultadoTransferencia);
         Assert.NotNull(await almacen.LeerAsync());
+        Assert.Empty(await vm.Cola.PendientesAsync());
     }
 
     [Fact]
@@ -192,6 +195,7 @@ public class PantallasViewModelTests
 
         Assert.Contains("sesión venció", vm.Estado);
         Assert.Null(await almacen.LeerAsync());
+        Assert.Single(await vm.Cola.PendientesAsync());
     }
 
     [Fact]
@@ -229,6 +233,7 @@ public class PantallasViewModelTests
 
         Assert.Contains("HTTP 500", vm.Estado);
         Assert.Contains("servidor", vm.Estado);
+        Assert.Single(await vm.Cola.PendientesAsync());
     }
 
     [Fact]

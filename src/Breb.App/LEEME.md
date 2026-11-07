@@ -4,7 +4,7 @@ Proyecto .NET MAUI creado en la **Clase 14 (Semana 11)** y dotado de arquitectur
 
 La app tiene tres pantallas (Shell): Entrar pide un token a `/token`, Saldo consulta `/cuentas/{id}/saldo` con ese token en el encabezado `Bearer`, y Transferir dispara `POST /cuentas/{id}/retener` (hace falta el rol `operador`: `ana.operadora`) y vuelve a leer el saldo. El JWT no vive en el ViewModel: queda en SecureStorage, detrás de `IBovedaSegura`, y se borra al cerrar sesión o al recibir un 401. Ese disparo aparta el dinero y arranca la saga: si el banco destino no confirma en 15 segundos, la plata vuelve sola. Nadie escribe `saldoLabel.Text = ...` en ninguna parte: eso lo hace el binding.
 
-La guía para la sustentación del Evaluable 3 está en [`docs/entregas/E3-guia-demo.md`](../../docs/entregas/E3-guia-demo.md).
+Para el Evaluable 4 la misma pantalla de Transferir escribe la operación en disco antes de la red, reintenta con la misma llave y deja cambiar la URL de la API. La guía está en [`docs/entregas/E4-preparacion.md`](../../docs/entregas/E4-preparacion.md). La del Evaluable 3 sigue en [`docs/entregas/E3-guia-demo.md`](../../docs/entregas/E3-guia-demo.md).
 
 | Pieza | Archivo | Responsabilidad |
 |---|---|---|

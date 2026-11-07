@@ -1,3 +1,8 @@
+# Laboratorio en el computador de clase. Publica 5433 y 5673 en todas las
+# interfaces, con las claves de desarrollo. En el servidor Ubuntu de la demo
+# NO use este archivo: use deploy/ubuntu/docker-compose.yml, que ata la base
+# y el broker a 127.0.0.1 y lee las claves de un .env que no se commitea.
+
 services:
   rabbitmq:
     # Imagen oficial de MassTransit: RabbitMQ 3.13 + management + el plugin

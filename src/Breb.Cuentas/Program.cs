@@ -22,7 +22,11 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
         "[{Timestamp:HH:mm:ss}] {Level:u3} {Message:lj}  traza={TraceId}{NewLine}{Exception}"));
 
 // ── Base de datos ──
-// ⚠️ Port=5433 — debe coincidir con el lado IZQUIERDO del docker-compose
+// La cadena sale de configuración (ConnectionStrings__Cuentas), no del código.
+// En Development, si nadie la definió, se usa el laboratorio: puerto 5433,
+// el lado IZQUIERDO del docker-compose. Fuera de Development no hay defecto
+// y se rechaza la contraseña de laboratorio.
+//
 // SSL Mode=Disable: es una BD local en Docker; sin esto Npgsql intenta un
 // handshake SSL que Docker Desktop en Windows aborta (SocketException 10053).
 // Maximum Pool Size: Npgsql abre hasta 100 conexiones por instancia si no se
@@ -30,10 +34,20 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
 // instancias, la demanda es de 300 contra un cupo de 100, y la base responde
 // "53300: sorry, too many clients already" — el error que vimos al escalar.
 // La base de datos es un recurso COMPARTIDO: el cupo se reparte, no se replica.
-var connectionString = "Host=localhost;Port=5433;Database=brebcuentas;" +
-                       "Username=postgres;Password=dev_only_password;" +
-                       "SSL Mode=Disable;Timeout=30;Command Timeout=60;" +
-                       "Maximum Pool Size=25;Minimum Pool Size=5";
+var connectionString = ConfiguracionDeServidor.CadenaDeCuentas(
+    builder.Configuration.GetConnectionString("Cuentas"),
+    builder.Environment.IsDevelopment());
+
+var rabbit = ConfiguracionDeServidor.Rabbit(
+    builder.Configuration["RabbitMq:Host"],
+    builder.Configuration["RabbitMq:Port"],
+    builder.Configuration["RabbitMq:VirtualHost"],
+    builder.Configuration["RabbitMq:User"],
+    builder.Configuration["RabbitMq:Password"],
+    builder.Environment.IsDevelopment());
+Console.WriteLine(
+    $"[infra] RabbitMQ {rabbit.Host}:{rabbit.Port} usuario {rabbit.User}. " +
+    "PostgreSQL sale de configuración; ni la base ni el broker van en el código.");
 
 builder.Services.AddDbContext<CuentasDbContext>(o =>
     o.UseNpgsql(connectionString));
@@ -76,10 +90,10 @@ builder.Services.AddMassTransit(x =>
         // es un ACCESS_REFUSED desconcertante: las credenciales son correctas,
         // solo que contra el broker equivocado.
         // Se comprueba con:  docker port breb-rabbitmq   (vacío = no publicó)
-        cfg.Host("localhost", 5673, "/", h =>
+        cfg.Host(rabbit.Host, rabbit.Port, rabbit.VirtualHost, h =>
         {
-            h.Username("guest");
-            h.Password("guest");
+            h.Username(rabbit.User);
+            h.Password(rabbit.Password);
         });
 
         // ⚠️ El motor del reloj. Sin esto el Schedule de la saga NUNCA
@@ -215,8 +229,12 @@ app.MapPost("/token", (SolicitudToken solicitud, DirectorioUsuarios directorio, 
     });
 });
 
+// transferenciaId es opcional y lo pone quien llama. Si la respuesta se pierde
+// y la app reintenta, la misma llave no aparta el dinero otra vez: la clave
+// primaria de Retencion ya es ese id. Sin llave, el servidor inventa una y
+// cada reintento es una retención nueva (el defecto que el E4 no puede tener).
 app.MapPost("/cuentas/{cuentaId:guid}/retener",
-    async (Guid cuentaId, decimal montoUVB,
+    async (Guid cuentaId, decimal montoUVB, Guid? transferenciaId,
            CuentasDbContext db, IPublishEndpoint publishEndpoint) =>
     {
         // ── Bloqueo pesimista sobre la fila de la cuenta (Semana 5) ─────────
@@ -257,8 +275,26 @@ app.MapPost("/cuentas/{cuentaId:guid}/retener",
 
         if (cuenta is null) return Results.NotFound("Cuenta no existe.");
 
-        var transferenciaId = Guid.NewGuid();
-        Telemetria.EtiquetarTransferencia(transferenciaId);
+        // La comprobación va DESPUÉS del FOR UPDATE: dos reintentos de la misma
+        // cuenta hacen fila, y el segundo ve lo que el primero ya escribió.
+        // 200 con el monto original (no 409) le dice a la app que ya está hecho
+        // y que puede sacar la operación de su cola.
+        var idTransferencia = transferenciaId ?? Guid.NewGuid();
+        Telemetria.EtiquetarTransferencia(idTransferencia);
+
+        var yaRetenida = await db.Retenciones
+            .FirstOrDefaultAsync(r => r.TransferenciaId == idTransferencia);
+
+        if (yaRetenida is not null)
+        {
+            Log.Information("Retención repetida ignorada: {TransferenciaId}", idTransferencia);
+            return Results.Ok(new
+            {
+                transferenciaId = idTransferencia,
+                montoUVB = yaRetenida.MontoUVB,
+                repetida = true
+            });
+        }
 
         // Semana 6: Retener ahora devuelve la RETENCIÓN, no solo muta un número.
         // Queda una fila que dice exactamente quién retuvo cuánto y cuándo.
@@ -271,7 +307,7 @@ app.MapPost("/cuentas/{cuentaId:guid}/retener",
         Retencion retencion;
         try
         {
-            retencion = cuenta.Retener(transferenciaId, montoUVB);
+            retencion = cuenta.Retener(idTransferencia, montoUVB);
         }
         catch (InvalidOperationException ex)
         {
@@ -282,7 +318,7 @@ app.MapPost("/cuentas/{cuentaId:guid}/retener",
 
         await publishEndpoint.Publish(new FondosRetenidos
         {
-            TransferenciaId = transferenciaId,
+            TransferenciaId = idTransferencia,
             CuentaOrigenId = cuentaId,                 // la saga lo usa para compensar
             MontoUVB = montoUVB,
             TimeoutMs = 15000
@@ -292,9 +328,9 @@ app.MapPost("/cuentas/{cuentaId:guid}/retener",
         await tx.CommitAsync();                        // 4. y aquí suelta el bloqueo
 
         Log.Information("Fondos retenidos: {TransferenciaId} por {Monto} UVB",
-                        transferenciaId, montoUVB);
+                        idTransferencia, montoUVB);
 
-        return Results.Ok(new { transferenciaId, montoUVB });
+        return Results.Ok(new { transferenciaId = idTransferencia, montoUVB, repetida = false });
     })
     // Semana 8, primera sesión: .RequireAuthorization() — CUALQUIER token válido.
     // Un usuario de consulta retenía fondos. Ahora hace falta el rol operador;
