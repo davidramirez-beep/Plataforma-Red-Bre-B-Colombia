@@ -178,15 +178,23 @@ public partial class TransferenciaViewModel : ViewModelBase
             return;
         }
 
+        if (Guid.TryParse(LlaveTexto, out var llave))
+        {
+            var estado = await _api.ConsultarEstadoAsync(llave, sesion.Token);
+            Mostrar(estado);
+            if (InterpretacionDeRetencion.Leer(estado.Repetida, estado.Estado, estado.TransferenciaId.ToString(), FormatoUvb(estado.MontoUVB)).Terminal)
+                await _cola.ConfirmarAsync(llave);
+            await RefrescarPendientesAsync();
+        }
+
         var saldo = await _api.ConsultarSaldoAsync(CuentaDemo.Id, sesion.Token);
         SaldoTexto = FormatoUvb(saldo.SaldoDisponible);
         SaldoRetenidoTexto = FormatoUvb(saldo.SaldoRetenido);
-        Tono = "ok";
-        Estado = saldo.SaldoRetenido == 0
-            ? $"Confirmación: ya no hay retenido. Disponible {SaldoTexto}. " +
-              "Si bajó, el banco confirmó y la plata salió. Si volvió al monto anterior, la saga compensó a los 15 segundos."
-            : $"Todavía hay {SaldoRetenidoTexto} retenidos. Falta la confirmación del banco " +
-              "(scripts/confirmar-abono.sh con la llave) antes de que pasen 15 segundos.";
+        if (!Guid.TryParse(LlaveTexto, out _))
+        {
+            Tono = "neutro";
+            Estado = "No hay una llave a la vista. El saldo solo no dice si una transferencia se completó o se compensó.";
+        }
     });
 
     [RelayCommand(CanExecute = nameof(NoEstaCargando))]
@@ -234,22 +242,18 @@ public partial class TransferenciaViewModel : ViewModelBase
             Tono = "neutro";
 
             var retencion = await _api.RetenerAsync(op.CuentaId, op.MontoUVB, sesion.Token, op.Llave);
-            await _cola.ConfirmarAsync(op.Llave);
+            var lectura = Mostrar(retencion);
+            // Pendiente se queda en disco: al reabrir se vuelve a preguntar el
+            // mismo id. Solo un final (salió o volvió) la saca de la cola.
+            if (lectura.Terminal)
+                await _cola.ConfirmarAsync(op.Llave);
             await RefrescarPendientesAsync();
-
-            var avisoQuince =
-                " Si el banco destino no confirma, este dinero vuelve solo en unos 15 segundos.";
-            ResultadoTransferencia = retencion.Repetida
-                ? $"Ya estaba hecha. El servidor reconoció la misma llave y no apartó otra vez. Número: {retencion.TransferenciaId}.{avisoQuince}"
-                : $"Transferencia aceptada. Se apartaron {FormatoUvb(retencion.MontoUVB)}. Número: {retencion.TransferenciaId}.{avisoQuince}";
 
             try
             {
                 var saldo = await _api.ConsultarSaldoAsync(op.CuentaId, sesion.Token);
                 SaldoTexto = FormatoUvb(saldo.SaldoDisponible);
                 SaldoRetenidoTexto = FormatoUvb(saldo.SaldoRetenido);
-                Tono = "ok";
-                Estado = $"Listo · rol {sesion.Rol} · la plata quedó apartada. Aún no salió de la cuenta.";
             }
             catch (Exception ex) when (ex is ExcepcionDeApi or HttpRequestException or TaskCanceledException)
             {
@@ -261,8 +265,11 @@ public partial class TransferenciaViewModel : ViewModelBase
                     return false;
                 }
 
-                Tono = "ok";
-                Estado = "La transferencia sí quedó registrada, pero no pude refrescar el saldo. Use Volver a saldo para verlo.";
+                if (lectura.Tono == "error")
+                    return lectura.Terminal;
+
+                Tono = lectura.Tono;
+                Estado = "La operación quedó registrada con esa llave, pero no pude refrescar el saldo. No asumo si el dinero salió o volvió.";
             }
 
             return true;
@@ -317,6 +324,21 @@ public partial class TransferenciaViewModel : ViewModelBase
         {
             _unEnvio.Release();
         }
+    }
+
+    private InterpretacionDeRetencion.Lectura Mostrar(RespuestaRetencion retencion)
+    {
+        var lectura = InterpretacionDeRetencion.Leer(
+            retencion.Repetida,
+            retencion.Estado,
+            retencion.TransferenciaId.ToString(),
+            FormatoUvb(retencion.MontoUVB));
+        ResultadoTransferencia = lectura.Resultado;
+        Tono = lectura.Tono;
+        Estado = lectura.Tono == "error"
+            ? lectura.Estado
+            : $"Listo · {lectura.Estado}";
+        return lectura;
     }
 
     private async Task RefrescarPendientesAsync()

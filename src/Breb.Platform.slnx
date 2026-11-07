@@ -3,5 +3,6 @@
   <Project Path="Breb.App/Breb.App.csproj" />
   <Project Path="Breb.App.Tests/Breb.App.Tests.csproj" />
   <Project Path="Breb.Cuentas.Tests/Breb.Cuentas.Tests.csproj" />
+  <Project Path="Breb.Cuentas.Integracion/Breb.Cuentas.Integracion.csproj" />
   <Project Path="Breb.ColaPrueba/Breb.ColaPrueba.csproj" />
 </Solution>

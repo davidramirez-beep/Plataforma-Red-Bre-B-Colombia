@@ -1,56 +1,74 @@
 # E4 — preparación para el miércoles 11 de noviembre
 
+Esto no es un merge con el repositorio del profesor. La rama sale del HEAD de
+E3 de David (`bdcfdf9`) y reimplementa, encima de esas tres pantallas, lo que
+el evaluable pide. `upstream/main` (`24ef1a0`) no se mezcló.
+
 La app de E3 se conserva: Entrar, Saldo y Transferir por botones, el JWT en
 SecureStorage, y el 403 de Transferir con el texto exacto
 «No tienes permisos para transferir, hace falta el rol operador».
 
-Encima de eso queda lo que pide el evaluable: la transferencia se escribe en
-disco antes de salir a la red, el reintento manda la misma llave, y la URL de
-la API se cambia en Entrar sin recompilar.
+## Regla oficial que no se tocó
 
-Esto no es una demo hecha en un teléfono. Aquí no hay aparato Android ni se
-compiló el APK.
+El reloj de 15 segundos es el post-it de la Semana 1, escrito en
+`TransferenciaSaga`: si no llega confirmación del banco, se compensa y el
+dinero vuelve. No se alargó ni se apagó. Un intervalo offline más largo que
+esa ventana, cuando el servidor ya alcanzó a retener, **termina en
+compensación**. Eso es el resultado correcto, no un éxito a medias.
 
-## Qué se probó, y qué no
+La idempotencia sigue siendo la de la Semana 14: la misma llave responde 200
+(no 409, porque un 409 dejaría a la app reintentando para siempre) con el
+monto original y `repetida: true`. No se aparta otra vez.
 
-En esta máquina (Ubuntu 24.04, sin teléfono):
+Lo que estaba mal, y sí se corrigió:
+
+- La app decía «ya estaba hecha» y «la plata quedó apartada» también cuando
+  la saga había compensado. Ahora el JSON trae `estado`: `pendiente`,
+  `liquidada` o `liberada`. Liberada se muestra como compensación, en tono de
+  error, y no como transferencia completada. La cola se suelta solo en un
+  final (salió o volvió). Mientras sigue pendiente, la llave permanece en el
+  teléfono y al reabrir se vuelve a preguntar el mismo id.
+- `AbonoConfirmado` que llega antes de que exista la saga (típico si
+  `FondosRetenidos` está reintentando un `40001`) ya no se tira. La saga lo
+  recuerda y, cuando nace, liquida sin programar el reloj. El `40001` sigue
+  siendo el aislamiento serializable de PostgreSQL: se reintenta, no se
+  esconde. Una confirmación que llega cuando la compensación ya empezó no
+  liquida: el invariante del dominio es que el dinero no puede haber salido
+  y además haber vuelto. `Liberar()` sobre una retención ya liquidada no
+  devuelve el saldo.
+
+## Qué se probó
+
+En esta máquina, contra PostgreSQL 16 y RabbitMQ del compose de
+`deploy/ubuntu`, puertos solo en `127.0.0.1`:
 
 | Prueba | Resultado |
 |---|---|
-| `dotnet test src/Breb.App.Tests` | 54 pasaron. Cubren el 403 literal, el 400, la cola que sobrevive a otra instancia sobre la misma carpeta, el reintento con la misma llave, que un 401 o un corte de red no borra la pendiente, y que la URL escrita en Entrar se guarda. |
-| `dotnet test src/Breb.Cuentas.Tests` | 3 pasaron. Fuera de Development no arranca sin cadena, y rechaza `dev_only_password` y `guest`. |
-| `Breb.ColaPrueba` en dos procesos | El segundo proceso leyó la llave que encoló el primero y, tras confirmar, quedó en cero. Un archivo corrupto no tumba la lectura. |
-| API real contra PostgreSQL 16 y RabbitMQ, compose de `deploy/ubuntu`, puertos solo en `127.0.0.1` | Una retención de 15 UVB con llave fija dejó disponible 4985 y retenido 15. La segunda llamada con la misma llave respondió `repetida: true` y no movió el saldo. `scripts/confirmar-abono.sh` no se usó en esa corrida; el POST `/confirmar-abono` con rol `banco`, dentro de los 15 s, dejó `Liquidada = true`, retenido 0 y disponible 4985. Un 400 de saldo insuficiente y un 403 de `luis.consulta` siguieron igual. |
-| Arranque `ASPNETCORE_ENVIRONMENT=Production` sin variables | Se niega a salir: falta `ConnectionStrings__Cuentas`. |
-| `deploy/ubuntu/levantar.sh --comprobar` con el `.env.example` | Lo rechaza porque las claves dicen `CAMBIE`. |
-| APK, emulador y teléfono físico | No. Esta máquina no tiene el workload de MAUI Android. |
-| Azure, SSH y un servidor ya desplegado | No se hizo. La conexión a Azure está bloqueada y no se desplegó nada. |
+| `dotnet test src/Breb.App.Tests` | 55 pasaron. Incluyen cierre y reapertura de la cola, 401 que no la borra y al reabrir repite la misma llave, corte de red, y que `estado: liberada` no se presenta como éxito. |
+| `dotnet test src/Breb.Cuentas.Tests` | 5 pasaron. Production sin cadena no arranca; rechaza `dev_only_password` y `guest`; liquidar y luego liberar no devuelve el dinero. |
+| `dotnet test src/Breb.Cuentas.Integracion` | 3 pasaron, en 18 s, con la API y el broker de verdad. Hace falta definir `BREB_TEST_CONNECTION`, `BREB_TEST_RABBIT_USER` y `BREB_TEST_RABBIT_PASSWORD`; no hay claves en el código. |
+| Ocho `POST /retener` a la vez con la **misma** llave | Una sola fila, el saldo baja una vez, siete respuestas `repetida: true`. Después de tirar el host y levantar otro, el mismo id sigue en una fila y el saldo no se mueve. |
+| Ocho transferencias **distintas** a la vez, y `confirmar-abono` de las ocho sin esperar a la saga | Las ocho quedan `Liquidada`, ninguna `Liberada`. El disponible baja 80 y el retenido vuelve a 0. Reintentar las ocho no mueve el saldo. |
+| Una retención sin confirmación | A los 15 s oficiales queda `Liberada`, el saldo vuelve, y el reintento responde `estado: liberada` sin un segundo débito. |
+| APK y teléfono | No hay teléfono. El workload `maui-android` sí se instaló. El build Release no terminó: sin `-r` falla `NU1102` porque `Microsoft.NETCore.App.Runtime.Mono.linux-x64` 10.0.14 no está en nuget.org; con `-r android-arm64` restaura y luego `XA5300` (no hay Android SDK). `InstallAndroidDependencies` cancela la descarga de `https://aka.ms/AndroidManifestFeed/d18-0` aunque `curl` reciba 200. En el PC de David, donde el SDK ya está, el comando de Release de más abajo es el que hay que usar. |
+| Azure | No se desplegó nada. |
 
-La corrida con dos retenciones a la vez chocó con el `40001` de PostgreSQL que
-ya está documentado en el curso. Las dos terminaron `Liberada` (la saga
-compensó) porque la confirmación llegó mientras el reintento de la saga todavía
-no había asentado. En la demo hay que hacer **una** transferencia y confirmarla
-antes de 15 segundos, no dos juntas.
-
-`ss` mostró `127.0.0.1:5433`, `127.0.0.1:5673` y `127.0.0.1:15673`. Nada de eso
-escuchaba en `0.0.0.0`.
+No hace falta «hacer una sola operación» para que el resultado sea correcto.
+Hacer varias a la vez no duplica. No confirmar a tiempo compensa, y la app lo
+dice.
 
 ## Servidor Ubuntu 22.04 (2 vCPU, 8 GB)
 
-Hágalo en la VM cuando exista. No use el `docker-compose.yml` de la raíz: ese
-es el laboratorio y publica 5433 y 5673 en todas las interfaces, con
-`dev_only_password` y `guest`. En la VM use solo `deploy/ubuntu`.
-
-En la VM, Docker Engine (no Docker Desktop):
+Cuando exista la VM. No use el `docker-compose.yml` de la raíz: publica 5433
+y 5673. Use `deploy/ubuntu`.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-v2
+sudo apt-get install -y docker.io docker-compose-v2 nginx openssl
 sudo usermod -aG docker "$USER"
 ```
 
-.NET 8, que es el de `Breb.Cuentas`. El SDK 10 hace falta en el PC donde se
-compila la app, no en esta VM:
+.NET 8 en la VM (el SDK 10 es del PC donde se compila la app):
 
 ```bash
 wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
@@ -59,122 +77,122 @@ sudo apt-get update
 sudo apt-get install -y dotnet-sdk-8.0
 ```
 
-Secretos, en la VM y solo ahí:
-
 ```bash
 cp deploy/ubuntu/.env.example deploy/ubuntu/.env
-# edite .env. Claves largas, distintas, que no digan CAMBIE ni guest
-# ni dev_only_password ni la clave JWT del laboratorio.
+# claves largas, que no digan CAMBIE, guest, dev_only_password
+# ni la clave JWT del laboratorio
 chmod 600 deploy/ubuntu/.env
 ./deploy/ubuntu/levantar.sh
-```
-
-Eso levanta Postgres y RabbitMQ atados a `127.0.0.1` y escribe
-`deploy/ubuntu/api.env` con modo 600. Ese archivo no se commitea.
-
-Tablas y cuentas, con el usuario que puso en `.env` (el ejemplo usa `breb`,
-no `postgres`):
-
-```bash
 set -a; source deploy/ubuntu/api.env; set +a
 cd src/Breb.Cuentas
 dotnet tool install --global dotnet-ef --version 9.0.19
 dotnet ef database update
 cd ../..
 docker exec -i breb-postgres psql -U breb -d brebcuentas < scripts/cuentas-base.sql
-dotnet run --project src/Breb.Cuentas/Breb.Cuentas.csproj --no-launch-profile --urls http://0.0.0.0:5080
+dotnet run --project src/Breb.Cuentas/Breb.Cuentas.csproj --no-launch-profile --urls http://127.0.0.1:5080
 ```
 
-`--no-launch-profile` importa: sin eso Visual Studio dejaría el ambiente en
-Development y aceptaría la clave de laboratorio. Con `api.env` el ambiente es
-Production.
+`--no-launch-profile` deja el ambiente en Production, que es el de `api.env`.
+La API no se publica: solo `127.0.0.1:5080`.
 
-Compruebe en la propia VM, no desde fuera:
+## HTTPS, sin dominio
+
+No hay un nombre público que firmar, y no se inventa uno. En la VM, con la
+IP que el teléfono va a usar:
 
 ```bash
-ss -ltn | awk '/:5433|:5673|:15673|:5080/'
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5080/swagger/index.html
+./deploy/ubuntu/emitir-certificado.sh ESA-IP
+sudo mkdir -p /etc/breb
+sudo cp deploy/ubuntu/certs/server.crt deploy/ubuntu/certs/server.key /etc/breb/
+sudo chmod 600 /etc/breb/server.key
+sudo cp deploy/ubuntu/nginx-breb.conf /etc/nginx/sites-available/breb
+sudo ln -sf /etc/nginx/sites-available/breb /etc/nginx/sites-enabled/breb
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-5433, 5673 y 15673 tienen que decir `127.0.0.1`. El 5080 es el único que
-escucha en `0.0.0.0`, porque el teléfono tiene que llegar a la API.
+El script crea una CA y un certificado con `subjectAltName` de esa IP y de
+`localhost`. `ca.key` no sale del servidor. La carpeta `deploy/ubuntu/certs/`
+está en `.gitignore`.
 
-## Lo que falta hacer en Azure, a mano
+nginx escucha **443** y hace de proxy hacia `127.0.0.1:5080`. No hay sitio en
+el puerto 80. El JWT no viaja en claro hacia el teléfono.
 
-No está hecho. Cuando la política deje entrar a la suscripción:
+Compruebe en la VM:
 
-1. Una VM Ubuntu 22.04, 2 vCPU y 8 GB. Nada más: ni base gestionada ni
-   RabbitMQ público.
-2. En el grupo de seguridad de red, permitir TCP 22 solo desde su IP y TCP
-   5080 solo desde la IP del teléfono. No abrir 5432, 5433, 5672, 5673 ni
-   15672. Aunque alguien los abriera, el compose no los publica fuera de
-   localhost; el NSG es la segunda cerradura, no la única.
-3. `ufw` en el mismo sentido, si lo activa.
-4. Anotar la IP pública. Esa es la que se escribe en la app:
-   `http://ESA-IP:5080`. La API del curso es HTTP, sin TLS. El APK tiene que
-   ser **Debug**: en Release, Android bloquea el HTTP en claro
-   (`MainApplication.cs`). No deje el 5080 abierto a todo internet.
+```bash
+ss -ltn | awk '/:5433|:5673|:15673|:5080|:443/'
+curl -sk -o /dev/null -w '%{http_code}\n' https://127.0.0.1/swagger/index.html
+```
+
+5433, 5673, 15673 y 5080 tienen que decir `127.0.0.1`. El 443 es el único
+hacia afuera.
+
+En el grupo de seguridad de red, cuando la política deje entrar a Azure:
+TCP 443 solo desde la IP del teléfono, TCP 22 solo desde quien administra.
+No abrir 80, 5080, 5432, 5433, 5672, 5673 ni 15672. Esto no está hecho.
 
 ## Teléfono
 
-En el PC donde ya compiló el E3 (hace falta el workload MAUI; en esta máquina
-no está):
+El APK de la demo es **Release**. Debug sigue permitiendo HTTP hacia el
+emulador (`10.0.2.2`); eso es el laboratorio de la Semana 11, no el camino
+del teléfono. Release no permite claro (`network_security_config.xml`).
+
+La app usa el manejador HTTP de Android (`UseNativeHttpHandler`), así que
+respeta las CA del sistema y las que el usuario instale. Hay que instalar
+`ca.crt` en el teléfono:
+
+1. Copie `deploy/ubuntu/certs/ca.crt` al aparato.
+2. Ajustes → Seguridad → Cifrado y credenciales → Instalar un certificado →
+   Certificado de CA.
+3. Android avisa que una CA puede ver el tráfico. Esta CA es la del
+   laboratorio; no la use en otro sitio.
+4. En Entrar escriba `https://ESA-IP` (sin puerto: es el 443). Se guarda.
+   `https://10.0.2.2:5080` no es el camino del teléfono.
+
+Sin ese certificado instalado, Release no abre la API. No hay forma de
+generarlo aquí: la IP de la VM no existe todavía y no se inventa.
+
+En el PC donde ya compiló el E3:
 
 ```bash
-dotnet build src/Breb.App/Breb.App.csproj -c Debug -p:TargetFrameworks=net10.0-android -p:EmbedAssembliesIntoApk=true
+dotnet build src/Breb.App/Breb.App.csproj -c Release -p:TargetFrameworks=net10.0-android -p:EmbedAssembliesIntoApk=true
 ```
 
-Instale el APK Debug, con depuración USB ya probada. En Entrar, en
-«Dirección de la API», escriba `http://IP-DEL-SERVIDOR:5080` y pulse Entrar.
-Queda guardada en el teléfono. Cerrar sesión no la borra. `10.0.2.2` solo
-sirve dentro del emulador.
+## Guion, cuando existan la VM, el certificado y el teléfono
 
-Si la IP ya se conoce al compilar, también se puede poner en
-`ConfiguracionApi.IpEnLaWifi`. Con la caja de Entrar no hace falta
-recompilar.
-
-Antes de culpar a la app, abra `http://ESA-IP:5080/swagger` en el **navegador
-del teléfono**. Si esa página no carga, es red o firewall.
-
-## Guion de la demo, cuando el teléfono y la VM existan
-
-1. Entre como `ana.operadora` / `Operadora-2026`. `luis.consulta` ve el saldo
-   y, al transferir, el 403 literal. No puede mover plata.
-2. Saldo. Tiene que decir 5000 disponible y 0 retenido si acaba de cargar
-   `cuentas-base.sql`.
-3. Transferir, monto 10. La pantalla muestra la llave. El dinero queda
-   apartado, no salió: disponible baja, retenido sube. Si nadie confirma, a
-   los 15 segundos vuelve solo.
-4. Modo avión a mitad. La app tiene que decir que la operación quedó guardada.
-   Cierre la app por completo y ábrala otra vez: Saldo avisa que hay una
-   pendiente. Entre de nuevo si hizo falta y abra Transferir: se reenvía sola
-   con la misma llave. También puede quitar el modo avión con Transferir
-   abierta: al volver la red se reenvía sin otro toque.
-5. Antes de que pasen 15 segundos, en la VM:
+1. Entre como `ana.operadora`. `luis.consulta` ve el saldo y, al transferir,
+   el 403 literal.
+2. Transferir. La llave queda en pantalla y en el teléfono hasta que el
+   servidor diga un final.
+3. Modo avión a mitad, cierre total de la app, volver a abrir. La misma llave
+   se reenvía. Si el servidor nunca la vio, la retiene una vez y arranca el
+   reloj de 15 s en ese momento. Si ya la vio y sigue pendiente, no aparta
+   otra vez. Si ya compensó, la pantalla lo dice en rojo y no hay un segundo
+   débito. Para enviarla de nuevo hay que pulsar Transferir otra vez: es otra
+   llave, no un duplicado de la que volvió.
+4. Confirmación, dentro de esos 15 s si quiere el camino en que el dinero
+   sale:
 
    ```bash
-   ./scripts/confirmar-abono.sh LA-LLAVE-QUE-MUESTRA-LA-APP http://127.0.0.1:5080
+   ./scripts/confirmar-abono.sh LA-LLAVE http://127.0.0.1:5080
    ```
 
-   El script entra como `core-bancario` (rol `banco`). La app no puede
-   confirmar: un operador recibiría 403, y está bien que sea así.
-6. En el teléfono, «Actualizar saldo (ver confirmación)». Retenido en 0 y
-   disponible que **se quedó** en el monto ya descontado: la plata salió
-   (`Liquidada = true`). Si el disponible volvió a 5000, ganó el reloj y la
-   saga compensó. No lo presente como una transferencia completada.
+   El script entra como `core-bancario` y habla con la API por localhost,
+   dentro de la VM. El teléfono no usa esa URL: el teléfono va por HTTPS.
+5. «Actualizar saldo (ver confirmación)». `liquidada`: el dinero salió una
+   vez. `liberada`: volvió. No se presente el segundo como éxito.
 
-La cuenta de las demos es `11111111-1111-1111-1111-111111111111`.
+Varias transferencias a la vez son válidas. Cada una tiene su llave. El
+saldo baja la suma, y confirmarlas no las compensa por llegar antes que la
+saga.
 
-## Pendiente exacto
+## Pendiente que solo puede hacer David
 
-- VM Ubuntu 22.04 creada, con Docker Engine y .NET 8, y el `levantar.sh` ya
-  corrido con un `.env` real.
-- NSG y, si aplica, `ufw`: solo 5080 hacia el teléfono, SSH hacia quien
-  administra. Base y broker sin puerto público.
-- `dotnet ef database update` y `scripts/cuentas-base.sql` en esa VM.
-- API en `http://0.0.0.0:5080` con `api.env` cargado, y Swagger abierto desde
-  el navegador del teléfono.
-- APK **Debug** instalado (`net10.0-android`, `EmbedAssembliesIntoApk=true`).
-- Dirección de la API escrita en Entrar con la IP pública de la VM.
-- Un ensayo del guion, incluido modo avión y cierre de la app, el mismo día
-  y con el mismo teléfono de la sustentación.
+- VM Ubuntu 22.04, Docker Engine, nginx, .NET 8, `.env` real, `levantar.sh`,
+  `dotnet ef database update` y `cuentas-base.sql`.
+- `./deploy/ubuntu/emitir-certificado.sh` con la IP real, nginx con
+  `nginx-breb.conf`, `ca.crt` instalada en el teléfono como CA.
+- NSG: 443 desde el teléfono, 22 desde quien administra. Nada de base, broker
+  ni 5080 hacia afuera.
+- APK Release instalado y un ensayo en ese aparato: modo avión, cierre,
+  reapertura, una compensación dicha en voz alta y una liquidación.

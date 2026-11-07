@@ -23,6 +23,7 @@
     <Compile Include="..\Breb.App\Servicios\ClienteBrebApi.cs" Link="App\ClienteBrebApi.cs" />
     <Compile Include="..\Breb.App\Servicios\ColaOperaciones.cs" Link="App\ColaOperaciones.cs" />
     <Compile Include="..\Breb.App\Servicios\EleccionDeDireccion.cs" Link="App\EleccionDeDireccion.cs" />
+    <Compile Include="..\Breb.App\Servicios\InterpretacionDeRetencion.cs" Link="App\InterpretacionDeRetencion.cs" />
     <Compile Include="..\Breb.App\Servicios\DireccionActiva.cs" Link="App\DireccionActiva.cs" />
     <Compile Include="..\Breb.App\Servicios\DireccionGuardada.cs" Link="App\DireccionGuardada.cs" />
     <Compile Include="..\Breb.App\Servicios\AjusteDeDireccion.cs" Link="App\AjusteDeDireccion.cs" />

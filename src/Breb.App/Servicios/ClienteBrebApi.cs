@@ -68,4 +68,21 @@ public sealed class ClienteBrebApi(HttpClient http)
         return await respuesta.Content.ReadFromJsonAsync<RespuestaRetencion>()
                ?? throw new InvalidOperationException("Respuesta de /retener vacía.");
     }
+
+    /// <summary>
+    /// No mueve plata. Sirve para, al reabrir, saber si esa llave sigue
+    /// pendiente, ya salió una vez o ya volvió.
+    /// </summary>
+    public async Task<RespuestaRetencion> ConsultarEstadoAsync(Guid transferenciaId, string token)
+    {
+        using var solicitud = new HttpRequestMessage(HttpMethod.Get, $"/transferencias/{transferenciaId}");
+        solicitud.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var respuesta = await http.SendAsync(solicitud);
+        if (!respuesta.IsSuccessStatusCode)
+            throw await ExcepcionDeApi.DesdeAsync(respuesta, "transferencia");
+
+        return await respuesta.Content.ReadFromJsonAsync<RespuestaRetencion>()
+               ?? throw new InvalidOperationException("Respuesta de estado vacía.");
+    }
 }

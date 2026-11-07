@@ -287,13 +287,12 @@ app.MapPost("/cuentas/{cuentaId:guid}/retener",
 
         if (yaRetenida is not null)
         {
-            Log.Information("Retención repetida ignorada: {TransferenciaId}", idTransferencia);
-            return Results.Ok(new
-            {
-                transferenciaId = idTransferencia,
-                montoUVB = yaRetenida.MontoUVB,
-                repetida = true
-            });
+            // 200, no 409: la app tiene que poder dejar de reintentar. El campo
+            // estado dice la verdad de esa única retención: pendiente, liquidada
+            // (el dinero salió una vez) o liberada (volvió; no es un éxito).
+            Log.Information("Retención repetida ignorada: {TransferenciaId} estado {Estado}",
+                idTransferencia, EstadoDe(yaRetenida));
+            return Results.Ok(CuerpoRetencion(idTransferencia, yaRetenida, repetida: true));
         }
 
         // Semana 6: Retener ahora devuelve la RETENCIÓN, no solo muta un número.
@@ -330,12 +329,24 @@ app.MapPost("/cuentas/{cuentaId:guid}/retener",
         Log.Information("Fondos retenidos: {TransferenciaId} por {Monto} UVB",
                         idTransferencia, montoUVB);
 
-        return Results.Ok(new { transferenciaId = idTransferencia, montoUVB, repetida = false });
+        return Results.Ok(CuerpoRetencion(idTransferencia, retencion, repetida: false));
     })
     // Semana 8, primera sesión: .RequireAuthorization() — CUALQUIER token válido.
     // Un usuario de consulta retenía fondos. Ahora hace falta el rol operador;
     // con otro rol la respuesta es 403, no 401: sabemos quién es, y no puede.
     .RequireAuthorization(Politicas.Operador);
+
+// La misma verdad que devuelve el reintento, sin mover plata. La app la
+// consulta al reabrir para no decir «éxito» si la saga ya compensó.
+app.MapGet("/transferencias/{transferenciaId:guid}", async (Guid transferenciaId, CuentasDbContext db) =>
+{
+    var retencion = await db.Retenciones.AsNoTracking()
+        .FirstOrDefaultAsync(r => r.TransferenciaId == transferenciaId);
+    return retencion is null
+        ? Results.NotFound()
+        : Results.Ok(CuerpoRetencion(transferenciaId, retencion, repetida: true));
+})
+.RequireAuthorization(Politicas.LecturaCuentas);
 
 // Simula la confirmación del core bancario destino.
 // En producción este evento llegaría del banco receptor, no de un endpoint.
@@ -393,5 +404,18 @@ app.MapGet("/cuentas/{cuentaId:guid}/saldo", async (Guid cuentaId, CuentasDbCont
 
 app.Run();
 
+static string EstadoDe(Retencion retencion) =>
+    retencion.Liberada ? "liberada" : retencion.Liquidada ? "liquidada" : "pendiente";
+
+static object CuerpoRetencion(Guid id, Retencion retencion, bool repetida) => new
+{
+    transferenciaId = id,
+    montoUVB = retencion.MontoUVB,
+    repetida,
+    estado = EstadoDe(retencion)
+};
+
 /// <summary>Credenciales para /token. Viajan en el cuerpo, nunca en la URL.</summary>
 public record SolicitudToken(string? Usuario, string? Clave);
+
+public partial class Program { }

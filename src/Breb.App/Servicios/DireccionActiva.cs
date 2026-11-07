@@ -30,19 +30,22 @@ public sealed class DireccionActiva
 
         if (t.Length == 0)
             throw new ArgumentException(
-                "Escriba la dirección de la API. En el teléfono es http://IP-DEL-SERVIDOR:5080.");
+                "Escriba la dirección de la API. En el teléfono es https://IP-DEL-SERVIDOR.");
 
         if (!t.Contains("://", StringComparison.Ordinal))
             t = "http://" + t;
 
         if (!Uri.TryCreate(t, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
             throw new ArgumentException(
-                "La dirección de la API no es válida. Ejemplo: http://192.168.1.20:5080");
+                "La dirección de la API no es válida. Ejemplo: https://192.168.1.20");
 
         if (uri.Scheme != "http" && uri.Scheme != "https")
             throw new ArgumentException("La dirección tiene que empezar por http:// o https://.");
 
-        var puerto = uri.IsDefaultPort ? EleccionDeDireccion.Puerto : uri.Port;
+        // https sin puerto es 443 (el proxy). http sin puerto es 5080, el laboratorio.
+        var puerto = !uri.IsDefaultPort
+            ? uri.Port
+            : uri.Scheme == "https" ? 443 : EleccionDeDireccion.Puerto;
         return $"{uri.Scheme}://{uri.Host}:{puerto}";
     }
 }

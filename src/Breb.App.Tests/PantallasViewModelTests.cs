@@ -145,6 +145,7 @@ public class PantallasViewModelTests
         Assert.Contains("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", vm.ResultadoTransferencia);
         Assert.Contains("15 segundos", vm.ResultadoTransferencia);
         Assert.Contains("plata quedó apartada", vm.Estado);
+        Assert.Contains("Aún no salió", vm.Estado);
         Assert.Equal(ViewModelBase.FormatoUvb(4990m), vm.SaldoTexto);
         Assert.Equal(ViewModelBase.FormatoUvb(10m), vm.SaldoRetenidoTexto);
         Assert.Equal(2, http.Solicitudes.Count);
@@ -153,7 +154,7 @@ public class PantallasViewModelTests
         Assert.False(http.Solicitudes[0].TraeClaveDeIdempotencia);
         Assert.True(Guid.TryParse(http.Solicitudes[0].Ruta.Split("transferenciaId=")[1], out _));
         Assert.DoesNotContain(http.Solicitudes, s => s.Ruta == "/token");
-        Assert.Empty(await vm.Cola.PendientesAsync());
+        Assert.Single(await vm.Cola.PendientesAsync());
     }
 
     [Fact]

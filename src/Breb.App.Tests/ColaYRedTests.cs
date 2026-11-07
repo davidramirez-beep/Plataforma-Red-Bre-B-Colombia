@@ -83,6 +83,7 @@ public class DireccionApiTests
     public void La_direccion_escrita_en_entrar_se_normaliza_al_puerto_5080()
     {
         Assert.Equal("http://192.168.8.8:5080", DireccionActiva.Normalizar("192.168.8.8"));
+        Assert.Equal("https://192.168.8.8:443", DireccionActiva.Normalizar("https://192.168.8.8"));
         Assert.Equal("http://10.1.2.3:5051", DireccionActiva.Normalizar("http://10.1.2.3:5051/"));
         Assert.Throws<ArgumentException>(() => DireccionActiva.Normalizar("   "));
         Assert.Throws<ArgumentException>(() => DireccionActiva.Normalizar("http://"));
@@ -154,17 +155,30 @@ public class OfflineIdempotenciaTests
             JwtDePrueba.ConExpira(DateTimeOffset.UtcNow.AddMinutes(10)), "operador", "ana.operadora");
         var (otra, _, _, http2) = Fabrica.Transferencia(sesionVigente, carpeta);
         http2.Encolar(HttpStatusCode.OK,
-            $$"""{"transferenciaId":"{{llave}}","montoUVB":10,"repetida":true}""");
+            $$"""{"transferenciaId":"{{llave}}","montoUVB":10,"repetida":true,"estado":"pendiente"}""");
         http2.Encolar(HttpStatusCode.OK, SaldoTrasRetener);
 
         await otra.ReintentarPendientesCommand.ExecuteAsync(null);
 
         Assert.Contains($"transferenciaId={llave}", http2.Solicitudes[0].Ruta);
-        Assert.Empty(await otra.Cola.PendientesAsync());
-        Assert.Contains("Ya estaba hecha", otra.ResultadoTransferencia);
+        Assert.Single(await otra.Cola.PendientesAsync());
         Assert.Contains("no apartó otra vez", otra.ResultadoTransferencia);
         Assert.Contains("15 segundos", otra.ResultadoTransferencia);
-        Assert.Contains("plata quedó apartada", otra.Estado);
+        Assert.DoesNotContain("completada", otra.ResultadoTransferencia);
+        Assert.Equal("ok", otra.Tono);
+
+        http2.Encolar(HttpStatusCode.OK,
+            $$"""{"transferenciaId":"{{llave}}","montoUVB":10,"repetida":true,"estado":"liberada"}""");
+        http2.Encolar(HttpStatusCode.OK,
+            """{"cuentaId":"11111111-1111-1111-1111-111111111111","saldoDisponible":5000,"saldoRetenido":0}""");
+        await otra.ReintentarPendientesCommand.ExecuteAsync(null);
+
+        Assert.Empty(await otra.Cola.PendientesAsync());
+        Assert.Equal("error", otra.Tono);
+        Assert.Contains("compensó", otra.ResultadoTransferencia);
+        Assert.Contains("volvió", otra.ResultadoTransferencia);
+        Assert.Contains("No es una transferencia completada", otra.ResultadoTransferencia);
+        Assert.DoesNotContain("plata quedó apartada", otra.Estado);
     }
 
     [Fact]
@@ -198,12 +212,40 @@ public class OfflineIdempotenciaTests
             JwtDePrueba.ConExpira(DateTimeOffset.UtcNow.AddMinutes(10)), "operador", "ana.operadora");
         var (vm, _, _, http) = Fabrica.Transferencia(sesion, carpeta);
         http.Encolar(HttpStatusCode.OK,
-            $$"""{"transferenciaId":"{{llave}}","montoUVB":10,"repetida":true}""");
+            $$"""{"transferenciaId":"{{llave}}","montoUVB":10,"repetida":true,"estado":"liquidada"}""");
         http.Encolar(HttpStatusCode.OK, SaldoTrasRetener);
 
         await vm.PrepararCommand.ExecuteAsync(null);
 
         Assert.Contains($"transferenciaId={llave}", Assert.Single(http.Solicitudes, s => s.Ruta.Contains("/retener")).Ruta);
         Assert.Empty(await vm.Cola.PendientesAsync());
+        Assert.Contains("una vez", vm.ResultadoTransferencia);
+        Assert.Contains("No se hizo otra", vm.ResultadoTransferencia);
+        Assert.Equal("ok", vm.Tono);
+    }
+
+    [Fact]
+    public async Task Un_401_no_borra_la_cola_y_al_reabrir_repite_la_llave()
+    {
+        var carpeta = Path.Combine(Path.GetTempPath(), "breb-cola", Guid.NewGuid().ToString("N"));
+        var (vm, _, _, http) = Fabrica.Transferencia(Operadora, carpeta);
+        http.Encolar(HttpStatusCode.Unauthorized, "");
+
+        await vm.TransferirCommand.ExecuteAsync(null);
+
+        var llave = Assert.Single(await vm.Cola.PendientesAsync()).Llave;
+        Assert.Contains("sesión venció", vm.Estado);
+
+        var sesion = new SesionGuardada(
+            JwtDePrueba.ConExpira(DateTimeOffset.UtcNow.AddMinutes(10)), "operador", "ana.operadora");
+        var (reabierta, _, _, http2) = Fabrica.Transferencia(sesion, carpeta);
+        http2.Encolar(HttpStatusCode.OK,
+            $$"""{"transferenciaId":"{{llave}}","montoUVB":10,"repetida":true,"estado":"pendiente"}""");
+        http2.Encolar(HttpStatusCode.OK, SaldoTrasRetener);
+
+        await reabierta.PrepararCommand.ExecuteAsync(null);
+
+        Assert.Contains($"transferenciaId={llave}", http2.Solicitudes[0].Ruta);
+        Assert.Equal(llave, Assert.Single(await reabierta.Cola.PendientesAsync()).Llave);
     }
 }

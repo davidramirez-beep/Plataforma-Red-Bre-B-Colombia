@@ -53,6 +53,7 @@ appsettings.*.local.json
 .env
 .env.local
 deploy/ubuntu/api.env
+deploy/ubuntu/certs/
 
 ## ─── Sistema operativo ───
 .DS_Store

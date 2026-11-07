@@ -5,9 +5,10 @@
 #   ./levantar.sh --comprobar    valida .env y el compose, no levanta contenedores
 #   ./levantar.sh                docker compose up -d y escribe api.env
 #
-# Después, en la raíz del repositorio:
+# Después, en la raíz del repositorio. La API queda en localhost.
+# nginx (deploy/ubuntu/nginx-breb.conf) es quien publica HTTPS en 443.
 #   set -a; source deploy/ubuntu/api.env; set +a
-#   dotnet run --project src/Breb.Cuentas/Breb.Cuentas.csproj --urls http://0.0.0.0:5080
+#   dotnet run --project src/Breb.Cuentas/Breb.Cuentas.csproj --no-launch-profile --urls http://127.0.0.1:5080
 
 set -euo pipefail
 

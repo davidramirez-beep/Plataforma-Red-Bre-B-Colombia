@@ -13,4 +13,10 @@ public record RespuestaSaldo(Guid CuentaId, decimal SaldoDisponible, decimal Sal
 // POST /cuentas/{id}/retener responde { transferenciaId, montoUVB, repetida }.
 // Repetida=true: el servidor ya tenía esta llave y no apartó otra vez.
 // Si el JSON no trae el campo (API anterior), queda en false.
-public record RespuestaRetencion(Guid TransferenciaId, decimal MontoUVB, bool Repetida = false);
+// estado: pendiente (sigue apartada), liquidada (salió una vez), liberada (volvió).
+// Si el JSON no lo trae, la app no inventa un éxito.
+public record RespuestaRetencion(
+    Guid TransferenciaId,
+    decimal MontoUVB,
+    bool Repetida = false,
+    string? Estado = null);
