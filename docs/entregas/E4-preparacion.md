@@ -172,7 +172,16 @@ dotnet build src/Breb.App/Breb.App.csproj -c Release -p:TargetFrameworks=net10.0
    otra vez. Si ya compensó, la pantalla lo dice en rojo y no hay un segundo
    débito. Para enviarla de nuevo hay que pulsar Transferir otra vez: es otra
    llave, no un duplicado de la que volvió.
-4. Confirmación sin copiar la llave. En la VM, antes de pulsar Transferir:
+4. Repetir una llave ya liquidada, sin débito nuevo y sin otro APK:
+
+   ```bash
+   ./scripts/reintentar-llave.sh 55d6aeb1-121e-4da8-9244-c792f26c440a 10
+   ```
+
+   Tiene que decir `repetida=true`, `estado=liquidada`, las mismas filas y el
+   mismo saldo. Si la llave no existe, no llama a `/retener`.
+
+5. Confirmación sin copiar la llave. En la VM, antes de pulsar Transferir:
 
    ```bash
    git pull
@@ -182,12 +191,50 @@ dotnet build src/Breb.App/Breb.App.csproj -c Release -p:TargetFrameworks=net10.0
    Cuando diga «Armada», en el teléfono pulse Transferir una sola vez.
    El vigilante llama a `scripts/confirmar-abono.sh` (rol banco, localhost).
    No reinicia la API ni hace falta otro APK. No abre el 5080 hacia afuera.
-5. «Actualizar saldo (ver confirmación)». `liquidada`: el dinero salió una
+6. «Actualizar saldo (ver confirmación)». `liquidada`: el dinero salió una
    vez. `liberada`: volvió. No se presente el segundo como éxito.
 
 Varias transferencias a la vez son válidas. Cada una tiene su llave. El
 saldo baja la suma, y confirmarlas no las compensa por llegar antes que la
 saga.
+
+## Modo avión a mitad de la transferencia
+
+El ensayo en el que la app encoló 10 UVB, se cerró y luego se reconectó
+demuestra la cola de antes de aceptar. No es el modo avión a mitad: ahí el
+toque ya salió a la red.
+
+Lo observable, sin adivinar el instante:
+
+1. Arme `./scripts/vigilar-confirmacion.sh`.
+2. En el teléfono pulse Transferir y, enseguida, active el modo avión.
+3. Mire la terminal antes de quitar el modo avión.
+   - Si ya imprimió `Nueva y viva`, el servidor aceptó la petición y el
+     teléfono no alcanzó a ver la respuesta. Es aceptación perdida. El
+     vigilante confirma esa misma fila.
+   - Si sigue en `Espero`, la petición no llegó. Es cola previa. Al quitar
+     el modo avión el reintento crea una sola fila y el vigilante la confirma.
+4. Si no anotó en qué momento apareció `Nueva y viva` respecto del modo
+   avión, no afirme cuál de los dos caminos fue. El saldo que baja una sola
+   vez sí se puede afirmar cuando el `FINAL` es `liquidada`.
+
+Después de liquidar, Actualizar saldo saca la operación de la cola. Reenviar
+dice que no hay pendientes: eso no prueba el rechazo de un duplicado. Esa
+prueba es `reintentar-llave.sh`.
+
+## Arranque durable de la API
+
+No haga `set -a; source deploy/ubuntu/api.env`. El shell ejecuta ese archivo:
+un `$()` en una clave correría, y los secretos quedan exportados en la
+sesión. `systemd` con `EnvironmentFile` no lo ejecuta.
+
+Apache sigue en el puerto 80. No lo pare ni ponga la API ahí. nginx sigue en
+el 443. La API solo en `127.0.0.1:5080`.
+
+Cuando quiera que sobreviva al cierre de la terminal, copie
+`deploy/ubuntu/breb-api.service`, sustituya `RUTA` y actívela. Hasta entonces
+puede dejar el `dotnet` que ya está corriendo. No hace falta reiniciarlo
+para el reintento de la llave ni para el vigilante.
 
 ## Pendiente que solo puede hacer David
 
