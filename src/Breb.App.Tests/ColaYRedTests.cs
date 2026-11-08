@@ -84,6 +84,10 @@ public class DireccionApiTests
     {
         Assert.Equal("http://192.168.8.8:5080", DireccionActiva.Normalizar("192.168.8.8"));
         Assert.Equal("https://192.168.8.8:443", DireccionActiva.Normalizar("https://192.168.8.8"));
+        Assert.Equal("https://20.110.156.1:443", DireccionActiva.Normalizar("https://20.110.156.1"));
+        Assert.Equal("https://20.110.156.1:443", DireccionActiva.Normalizar("https://20.110.156.1/"));
+        Assert.DoesNotContain(":5080", DireccionActiva.Normalizar("https://20.110.156.1"));
+        Assert.DoesNotContain(":5048", DireccionActiva.Normalizar("https://20.110.156.1"));
         Assert.Equal("http://10.1.2.3:5051", DireccionActiva.Normalizar("http://10.1.2.3:5051/"));
         Assert.Throws<ArgumentException>(() => DireccionActiva.Normalizar("   "));
         Assert.Throws<ArgumentException>(() => DireccionActiva.Normalizar("http://"));
@@ -124,6 +128,44 @@ public class DireccionApiTests
 
         Assert.Equal("http://192.168.8.8:5080", boveda.Datos[DireccionActiva.ClaveAlmacen]);
         Assert.Equal(Rutas.Saldo, Assert.Single(nav.RutasVisitadas));
+    }
+
+    [Fact]
+    public async Task Https_sin_puerto_se_guarda_en_443_y_el_cliente_no_usa_5080()
+    {
+        var direccion = new DireccionActiva("http://10.0.2.2:5080");
+        var boveda = new BovedaEnMemoria();
+        var guardada = new DireccionGuardada(boveda, direccion);
+        var interno = new HandlerFalso();
+        interno.Encolar(HttpStatusCode.OK,
+            """{"token":"abc","expira":"2026-10-21T12:00:00Z","tipo":"Bearer","rol":"operador","duracionMinutos":15}""");
+        var ajuste = new AjusteDeDireccion(direccion) { InnerHandler = interno };
+        using var http = new HttpClient(ajuste) { BaseAddress = new Uri("http://10.0.2.2:5080") };
+        var vm = new LoginViewModel(
+            new ClienteBrebApi(http),
+            new AlmacenSesion(boveda),
+            new NavegacionFalsa(),
+            direccion,
+            guardada);
+
+        Assert.EndsWith(":5080", vm.DireccionTexto);
+
+        // Lo que el Entry tiene escrito al pulsar Entrar, aunque el enlace
+        // todavía no haya copiado el texto al ViewModel.
+        vm.TomarLoEscrito("https://20.110.156.1", "ana.operadora", "clave-de-prueba");
+        await vm.EntrarCommand.ExecuteAsync(null);
+
+        const string esperada = "https://20.110.156.1:443";
+        Assert.Equal(esperada, vm.DireccionTexto);
+        Assert.Equal(esperada, direccion.Base);
+        Assert.Equal(esperada, boveda.Datos[DireccionActiva.ClaveAlmacen]);
+
+        var pedida = new Uri(interno.Solicitudes[0].UriAbsoluta);
+        Assert.Equal("https", pedida.Scheme);
+        Assert.Equal("20.110.156.1", pedida.Host);
+        Assert.Equal(443, pedida.Port);
+        Assert.DoesNotContain(":5080", pedida.AbsoluteUri);
+        Assert.DoesNotContain(":5048", pedida.AbsoluteUri);
     }
 }
 

@@ -42,10 +42,51 @@ public sealed class DireccionActiva
         if (uri.Scheme != "http" && uri.Scheme != "https")
             throw new ArgumentException("La dirección tiene que empezar por http:// o https://.");
 
-        // https sin puerto es 443 (el proxy). http sin puerto es 5080, el laboratorio.
-        var puerto = !uri.IsDefaultPort
-            ? uri.Port
-            : uri.Scheme == "https" ? 443 : EleccionDeDireccion.Puerto;
-        return $"{uri.Scheme}://{uri.Host}:{puerto}";
+        // Solo cuenta el puerto escrito en el texto. Uri.Port no: con una IP
+        // puede informar un puerto que la persona no puso, y el 5080 del
+        // emulador se colaba en un https.
+        var puerto = PuertoEscrito(t, uri)
+                     ?? (uri.Scheme == "https" ? 443 : EleccionDeDireccion.Puerto);
+        if (puerto is < 1 or > 65535)
+            throw new ArgumentException("El puerto de la API no es válido.");
+
+        return $"{uri.Scheme}://{uri.IdnHost}:{puerto}";
+    }
+
+    private static int? PuertoEscrito(string texto, Uri uri)
+    {
+        var marca = texto.IndexOf("://", StringComparison.Ordinal);
+        if (marca < 0) return null;
+        var resto = texto[(marca + 3)..];
+
+        if (resto.StartsWith('['))
+        {
+            var fin = resto.IndexOf(']');
+            if (fin < 0 || fin + 1 >= resto.Length || resto[fin + 1] != ':')
+                return null;
+            return LeerPuerto(resto[(fin + 2)..]);
+        }
+
+        var host = resto.StartsWith(uri.IdnHost, StringComparison.OrdinalIgnoreCase)
+            ? uri.IdnHost
+            : uri.Host;
+        if (!resto.StartsWith(host, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var despues = resto[host.Length..];
+        if (!despues.StartsWith(':'))
+            return null;
+        return LeerPuerto(despues[1..]);
+    }
+
+    private static int? LeerPuerto(string despues)
+    {
+        var corte = despues.IndexOfAny(['/', '?', '#']);
+        var numero = corte >= 0 ? despues[..corte] : despues;
+        if (numero.Length == 0) return null;
+        return int.TryParse(numero, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var puerto)
+            ? puerto
+            : null;
     }
 }

@@ -146,8 +146,10 @@ respeta las CA del sistema y las que el usuario instale. Hay que instalar
    Certificado de CA.
 3. Android avisa que una CA puede ver el tráfico. Esta CA es la del
    laboratorio; no la use en otro sitio.
-4. En Entrar escriba `https://ESA-IP` (sin puerto: es el 443). Se guarda.
-   `https://10.0.2.2:5080` no es el camino del teléfono.
+4. En Entrar borre la dirección entera y escriba `https://ESA-IP` (sin puerto).
+   Al pulsar Entrar tiene que quedar `https://ESA-IP:443`. Si vuelve a `:5080`,
+   el APK es el anterior: ese puerto es el del emulador y el enlace del campo
+   no alcanzaba a guardar lo escrito. No abra el 5080 en la VM.
 
 Sin ese certificado instalado, Release no abre la API. No hay forma de
 generarlo aquí: la IP de la VM no existe todavía y no se inventa.

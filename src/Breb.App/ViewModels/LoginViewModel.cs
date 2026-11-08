@@ -80,6 +80,18 @@ public partial class LoginViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Lo que está escrito en los Entry, copiado antes de Entrar. En Android
+    /// el enlace del texto no llega al ViewModel al pulsar el botón: se queda
+    /// el valor anterior, que es el http del emulador en el puerto 5080.
+    /// </summary>
+    public void TomarLoEscrito(string? direccion, string? usuario, string? clave)
+    {
+        DireccionTexto = direccion ?? string.Empty;
+        Usuario = usuario ?? string.Empty;
+        Clave = clave ?? string.Empty;
+    }
+
     [RelayCommand(CanExecute = nameof(NoEstaCargando))]
     private Task EntrarAsync() => EjecutarAsync(async () =>
     {
