@@ -10,16 +10,28 @@ public partial class LoginViewModel : ViewModelBase
     private readonly ClienteBrebApi _api;
     private readonly IAlmacenSesion _almacen;
     private readonly INavegacion _nav;
+    private readonly DireccionActiva _direccion;
+    private readonly DireccionGuardada _guardada;
     private bool _revisoArranque;
 
-    public LoginViewModel(ClienteBrebApi api, IAlmacenSesion almacen, INavegacion nav)
+    public LoginViewModel(
+        ClienteBrebApi api,
+        IAlmacenSesion almacen,
+        INavegacion nav,
+        DireccionActiva direccion,
+        DireccionGuardada guardada)
     {
         _api = api;
         _almacen = almacen;
         _nav = nav;
+        _direccion = direccion;
+        _guardada = guardada;
         Usuario = "luis.consulta";
         Clave = "Consulta-2026";
-        Estado = "Escriba usuario y clave.";
+        DireccionTexto = direccion.Base;
+        Estado = direccion.FaltaLaIpDelTelefono
+            ? direccion.Nota
+            : "Escriba usuario y clave.";
     }
 
     [ObservableProperty]
@@ -27,6 +39,9 @@ public partial class LoginViewModel : ViewModelBase
 
     [ObservableProperty]
     private string clave = string.Empty;
+
+    [ObservableProperty]
+    private string direccionTexto = string.Empty;
 
     protected override void AlCambiarCargando() => EntrarCommand.NotifyCanExecuteChanged();
 
@@ -43,6 +58,9 @@ public partial class LoginViewModel : ViewModelBase
 
         try
         {
+            await _guardada.CargarAsync();
+            DireccionTexto = _direccion.Base;
+
             var sesion = await _almacen.LeerAsync();
             if (sesion is null) return;
 
@@ -62,6 +80,18 @@ public partial class LoginViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Lo que está escrito en los Entry, copiado antes de Entrar. En Android
+    /// el enlace del texto no llega al ViewModel al pulsar el botón: se queda
+    /// el valor anterior, que es el http del emulador en el puerto 5080.
+    /// </summary>
+    public void TomarLoEscrito(string? direccion, string? usuario, string? clave)
+    {
+        DireccionTexto = direccion ?? string.Empty;
+        Usuario = usuario ?? string.Empty;
+        Clave = clave ?? string.Empty;
+    }
+
     [RelayCommand(CanExecute = nameof(NoEstaCargando))]
     private Task EntrarAsync() => EjecutarAsync(async () =>
     {
@@ -71,6 +101,8 @@ public partial class LoginViewModel : ViewModelBase
             return;
         }
 
+        if (!await AplicarDireccionAsync()) return;
+
         Estado = "Pidiendo token…";
         var token = await _api.ObtenerTokenAsync(Usuario.Trim(), Clave);
         await _almacen.GuardarAsync(token.Token, token.Rol, Usuario.Trim());
@@ -78,4 +110,21 @@ public partial class LoginViewModel : ViewModelBase
         Estado = $"Sesión iniciada · rol {token.Rol}.";
         await _nav.IrAsync(Rutas.Saldo);
     });
+
+    private async Task<bool> AplicarDireccionAsync()
+    {
+        try
+        {
+            var normalizada = DireccionActiva.Normalizar(DireccionTexto);
+            if (!string.Equals(normalizada, _direccion.Base, StringComparison.OrdinalIgnoreCase))
+                await _guardada.GuardarAsync(normalizada);
+            DireccionTexto = _direccion.Base;
+            return true;
+        }
+        catch (ArgumentException ex)
+        {
+            MarcarError(ex.Message);
+            return false;
+        }
+    }
 }

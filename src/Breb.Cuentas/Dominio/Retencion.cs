@@ -89,6 +89,10 @@ public class Retencion
     {
         if (Liberada) return false;
 
+        // El mismo invariante que Liquidar() en el otro sentido: si el dinero
+        // ya salió hacia el destino, no puede además volver a la cuenta.
+        if (Liquidada) return false;
+
         Liberada = true;
         LiberadaEn = DateTime.UtcNow;
         return true;

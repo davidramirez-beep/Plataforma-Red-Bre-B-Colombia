@@ -56,23 +56,38 @@ public class ClienteBrebApiTests
     }
 
     [Fact]
-    public async Task Retener_manda_el_monto_en_la_query_y_no_pide_idempotencia()
+    public async Task Retener_manda_el_monto_y_la_llave_del_cliente()
     {
         var (api, handler) = ClienteFalso.Crear();
+        var llave = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         handler.Encolar(HttpStatusCode.OK,
-            """{"transferenciaId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","montoUVB":10.5}""");
+            """{"transferenciaId":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","montoUVB":10.5,"repetida":false}""");
 
-        var retencion = await api.RetenerAsync(Cuenta, 10.5m, "tok-op");
+        var retencion = await api.RetenerAsync(Cuenta, 10.5m, "tok-op", llave);
 
-        Assert.Equal(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), retencion.TransferenciaId);
+        Assert.Equal(llave, retencion.TransferenciaId);
         Assert.Equal(10.5m, retencion.MontoUVB);
+        Assert.False(retencion.Repetida);
         var solicitud = Assert.Single(handler.Solicitudes);
         Assert.Equal(HttpMethod.Post, solicitud.Metodo);
-        Assert.Equal($"/cuentas/{Cuenta}/retener?montoUVB=10.5", solicitud.Ruta);
+        Assert.Equal($"/cuentas/{Cuenta}/retener?montoUVB=10.5&transferenciaId={llave}", solicitud.Ruta);
         Assert.Equal("Bearer", solicitud.Esquema);
         Assert.Equal("tok-op", solicitud.Token);
         Assert.False(solicitud.TraeClaveDeIdempotencia);
         Assert.Null(solicitud.Cuerpo);
+    }
+
+    [Fact]
+    public async Task Retener_repetida_no_se_lee_como_una_transferencia_nueva()
+    {
+        var (api, handler) = ClienteFalso.Crear();
+        handler.Encolar(HttpStatusCode.OK,
+            """{"transferenciaId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","montoUVB":10,"repetida":true}""");
+
+        var retencion = await api.RetenerAsync(Cuenta, 99m, "tok-op", Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+        Assert.True(retencion.Repetida);
+        Assert.Equal(10m, retencion.MontoUVB);
     }
 
     [Fact]
@@ -81,7 +96,7 @@ public class ClienteBrebApiTests
         var (api, handler) = ClienteFalso.Crear();
         handler.Encolar(HttpStatusCode.BadRequest, "\"Saldo insuficiente para retener.\"");
 
-        var ex = await Assert.ThrowsAsync<ExcepcionDeApi>(() => api.RetenerAsync(Cuenta, 999999m, "tok"));
+        var ex = await Assert.ThrowsAsync<ExcepcionDeApi>(() => api.RetenerAsync(Cuenta, 999999m, "tok", Guid.NewGuid()));
 
         Assert.Equal(400, ex.Codigo);
         Assert.Equal("transferencia", ex.Operacion);
@@ -94,7 +109,7 @@ public class ClienteBrebApiTests
         var (api, handler) = ClienteFalso.Crear();
         handler.Encolar(HttpStatusCode.Forbidden, "");
 
-        var ex = await Assert.ThrowsAsync<ExcepcionDeApi>(() => api.RetenerAsync(Cuenta, 10m, "tok-consulta"));
+        var ex = await Assert.ThrowsAsync<ExcepcionDeApi>(() => api.RetenerAsync(Cuenta, 10m, "tok-consulta", Guid.NewGuid()));
 
         Assert.Equal(403, ex.Codigo);
         Assert.Equal("transferencia", ex.Operacion);

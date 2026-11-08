@@ -18,6 +18,12 @@
                    TextColor="Gray"
                    LineBreakMode="WordWrap"/>
 
+            <Label Text="{Binding AvisoPendientes}"
+                   IsVisible="{Binding HayAvisoPendientes}"
+                   FontSize="14"
+                   TextColor="#B00020"
+                   LineBreakMode="WordWrap"/>
+
             <Button Text="Consultar saldo"
                     Command="{Binding ConsultarSaldoCommand}"
                     HorizontalOptions="Fill"/>

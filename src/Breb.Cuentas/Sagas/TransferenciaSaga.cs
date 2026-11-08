@@ -13,6 +13,12 @@ public class TransferenciaSaga : MassTransitStateMachine<TransferenciaSagaState>
     public State EsperandoConfirmacion { get; private set; } = null!;
     public State Compensando { get; private set; } = null!;
 
+    // La confirmación puede ganar la carrera ANTES de que la saga exista:
+    // /retener ya commiteó, pero FondosRetenidos sigue reintentando un 40001.
+    // Si ese aviso se descarta, a los 15 s se compensa una transferencia que
+    // el banco ya confirmó. El reloj de 15 s no cambia: solo se recuerda el aviso.
+    public State ConfirmacionAdelantada { get; private set; } = null!;
+
     // ── Eventos que mueven la máquina ──
     public Event<FondosRetenidos> FondosRetenidosEvt { get; private set; } = null!;
     public Event<AbonoConfirmado> AbonoConfirmadoEvt { get; private set; } = null!;
@@ -41,20 +47,35 @@ public class TransferenciaSaga : MassTransitStateMachine<TransferenciaSagaState>
         });
 
         // ── Nace la saga ──
+        // El reloj sigue siendo 15 s desde que se procesa FondosRetenidos
+        // (el post-it de la Semana 1). No lo alarga el cliente.
         Initially(
             When(FondosRetenidosEvt)
-                .Then(ctx =>
-                {
-                    ctx.Saga.MontoUVB = ctx.Message.MontoUVB;
-                    ctx.Saga.CuentaOrigenId = ctx.Message.CuentaOrigenId;
-                    ctx.Saga.IniciadaEn = DateTime.UtcNow;
-                })
+                .Then(CopiarDatos)
                 .Schedule(TimeoutConfirmacion,               // ⏰ arranca el reloj
                     ctx => new TimeoutConfirmacion
                     {
                         TransferenciaId = ctx.Saga.CorrelationId
                     })
-                .TransitionTo(EsperandoConfirmacion));
+                .TransitionTo(EsperandoConfirmacion),
+
+            When(AbonoConfirmadoEvt)
+                .TransitionTo(ConfirmacionAdelantada));
+
+        // El banco habló antes de que la saga pudiera anotarse. Cuando llegue
+        // FondosRetenidos no se programa el reloj: la carrera ya la ganó la
+        // confirmación. Un segundo aviso igual no hace nada.
+        During(ConfirmacionAdelantada,
+            When(FondosRetenidosEvt)
+                .Then(CopiarDatos)
+                .Publish(ctx => new TransferenciaCompletada
+                {
+                    TransferenciaId = ctx.Saga.CorrelationId
+                })
+                .Finalize(),
+
+            When(AbonoConfirmadoEvt)
+                .Then(ctx => ctx.Saga.MotivoCompensacion ??= "Confirmación ya anotada"));
 
         // ── La carrera: confirmación contra reloj ──
         During(EsperandoConfirmacion,
@@ -65,6 +86,11 @@ public class TransferenciaSaga : MassTransitStateMachine<TransferenciaSagaState>
                     TransferenciaId = ctx.Saga.CorrelationId
                 })
                 .Finalize(),
+
+            // Redelivery después de un 40001: la saga ya existe. No se programa
+            // otro reloj ni se lanza NotAcceptedStateMachineException.
+            When(FondosRetenidosEvt)
+                .Then(CopiarDatos),
 
             When(TimeoutConfirmacion.Received)               // ⏰ el reloj ganó
                 .Then(ctx => ctx.Saga.MotivoCompensacion = "Timeout de confirmacion (15s)")
@@ -107,9 +133,24 @@ public class TransferenciaSaga : MassTransitStateMachine<TransferenciaSagaState>
             // trata como error. Ignorarlo explicitamente es la diferencia
             // entre un sistema tolerante y uno que se atasca.
             When(TimeoutConfirmacion.Received)
-                .Then(ctx => ctx.Saga.MotivoCompensacion ??= "Timeout duplicado ignorado"));
+                .Then(ctx => ctx.Saga.MotivoCompensacion ??= "Timeout duplicado ignorado"),
+
+            // El reloj ya ganó. Liquidar ahora violaría el invariante: el dinero
+            // volvió y no puede además haber salido. Se anota y no se publica
+            // TransferenciaCompletada.
+            When(AbonoConfirmadoEvt)
+                .Then(ctx => ctx.Saga.MotivoCompensacion ??=
+                    "Confirmación tardía: la compensación ya iba en curso"));
 
         // Borra la fila cuando la saga termina.
         SetCompletedWhenFinalized();
+    }
+
+    private static void CopiarDatos(BehaviorContext<TransferenciaSagaState, FondosRetenidos> ctx)
+    {
+        if (ctx.Saga.MontoUVB != 0) return;
+        ctx.Saga.MontoUVB = ctx.Message.MontoUVB;
+        ctx.Saga.CuentaOrigenId = ctx.Message.CuentaOrigenId;
+        ctx.Saga.IniciadaEn = DateTime.UtcNow;
     }
 }

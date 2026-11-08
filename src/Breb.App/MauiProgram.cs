@@ -18,15 +18,25 @@ public static class MauiProgram
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
 			});
 
-		// Clase 14 (trampa 3): dentro del EMULADOR, localhost es el emulador,
-		// no esta maquina. 10.0.2.2 es la direccion que el emulador reserva
-		// para hablar con el host. En un telefono real esto cambia por la IP
-		// de la maquina en la red WiFi (eso llega mas adelante en el curso).
+		// El emulador habla con el host por 10.0.2.2. Un teléfono físico no:
+		// Entrar deja cambiar la URL y AjusteDeDireccion la aplica en cada llamada.
+		var direccion = new DireccionActiva(ConfiguracionApi.Direccion)
+		{
+			Nota = ConfiguracionApi.Descripcion,
+			FaltaLaIpDelTelefono = ConfiguracionApi.FaltaConfigurar
+		};
+		builder.Services.AddSingleton(direccion);
+		builder.Services.AddSingleton<DireccionGuardada>();
+		builder.Services.AddTransient<AjusteDeDireccion>();
 		builder.Services.AddHttpClient<ClienteBrebApi>(http =>
 		{
-			http.BaseAddress = new Uri("http://10.0.2.2:5080");
+			http.BaseAddress = new Uri(direccion.Base);
 			http.Timeout = TimeSpan.FromSeconds(10);
-		});
+		}).AddHttpMessageHandler<AjusteDeDireccion>();
+
+		// La cola vive en el almacenamiento de la app: cerrarla no la borra.
+		// Desinstalar sí. No es la memoria del proceso.
+		builder.Services.AddSingleton(new ColaOperaciones(FileSystem.AppDataDirectory));
 
 		builder.Services.AddSingleton<IBovedaSegura, BovedaSecureStorage>();
 		builder.Services.AddSingleton<IAlmacenSesion, AlmacenSesion>();

@@ -18,14 +18,29 @@
                    TextColor="Gray"
                    LineBreakMode="WordWrap"/>
 
+            <Label Text="Dirección de la API" FontSize="13"/>
+            <Entry x:Name="DireccionEntry"
+                   Text="{Binding DireccionTexto, Mode=TwoWay, UpdateSourceEventName=TextChanged}"
+                   Placeholder="https://192.168.1.20"
+                   Keyboard="Url"/>
+            <Label Text="En el emulador puede dejar http://10.0.2.2:5080. En el teléfono use https://IP-DEL-SERVIDOR (puerto 443). Se guarda en el aparato."
+                   FontSize="12"
+                   TextColor="Gray"
+                   LineBreakMode="WordWrap"/>
+
             <Label Text="Usuario" FontSize="13"/>
-            <Entry Text="{Binding Usuario}" Placeholder="usuario"/>
+            <Entry x:Name="UsuarioEntry"
+                   Text="{Binding Usuario, Mode=TwoWay, UpdateSourceEventName=TextChanged}"
+                   Placeholder="usuario"/>
 
             <Label Text="Clave" FontSize="13"/>
-            <Entry Text="{Binding Clave}" IsPassword="True" Placeholder="clave"/>
+            <Entry x:Name="ClaveEntry"
+                   Text="{Binding Clave, Mode=TwoWay, UpdateSourceEventName=TextChanged}"
+                   IsPassword="True"
+                   Placeholder="clave"/>
 
             <Button Text="Entrar"
-                    Command="{Binding EntrarCommand}"
+                    Clicked="AlPulsarEntrar"
                     HorizontalOptions="Fill"/>
 
             <ActivityIndicator IsRunning="{Binding Cargando}"

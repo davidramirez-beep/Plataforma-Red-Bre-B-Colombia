@@ -55,6 +55,14 @@ public class CompensarTransferenciaConsumer : IConsumer<CompensarTransferencia>
             return;
         }
 
+        if (retencion.Liquidada)
+        {
+            // Ya salió hacia el banco. Liberarla devolvería plata que no está.
+            _logger.LogWarning(
+                "Retención {Id} ya está liquidada. No se compensa.", msg.TransferenciaId);
+            return;
+        }
+
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == retencion.CuentaId);
         if (cuenta is null)
         {

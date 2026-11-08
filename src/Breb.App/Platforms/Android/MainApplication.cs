@@ -15,9 +15,11 @@ namespace Breb.App;
 // Va solo en Debug a propósito: una entrega que acepte HTTP en claro en
 // Release estaría exponiendo tokens y saldos en texto plano.
 #if DEBUG
-[Application(UsesCleartextTraffic = true)]
+// El emulador del laboratorio sigue hablando HTTP con 10.0.2.2. El teléfono
+// de la demo no usa este hueco: Release no permite claro y la API pública va por HTTPS.
+[Application(UsesCleartextTraffic = true, NetworkSecurityConfig = "@xml/network_security_config")]
 #else
-[Application]
+[Application(NetworkSecurityConfig = "@xml/network_security_config")]
 #endif
 public class MainApplication : MauiApplication
 {

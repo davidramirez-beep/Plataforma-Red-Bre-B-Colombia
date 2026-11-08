@@ -1,0 +1,27 @@
+# Unidad opcional. No la instala nadie solo: hay que copiarla a mano.
+# No escucha en el puerto 80 (ese es Apache) ni en 443 (ese es nginx).
+# EnvironmentFile no ejecuta el archivo: no use `source api.env`.
+#
+#   sudo cp deploy/ubuntu/breb-api.service /etc/systemd/system/breb-api.service
+#   sudo systemctl edit --force breb-api
+# y sustituya RUTA por el directorio del clone. Luego:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now breb-api
+#   sudo systemctl status breb-api --no-pager
+
+[Unit]
+Description=API Bre-B en localhost:5080
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=RUTA
+EnvironmentFile=RUTA/deploy/ubuntu/api.env
+ExecStart=/usr/bin/dotnet RUTA/src/Breb.Cuentas/bin/Release/net8.0/Breb.Cuentas.dll --urls http://127.0.0.1:5080
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  La demo en el teléfono va por HTTPS. No hay dominio público, así que el
+  certificado lo firma una CA creada en el servidor (deploy/ubuntu). Android
+  no confía en una CA de usuario salvo que la app lo diga. system sigue
+  valiendo para un certificado de una CA pública el día que haya dominio.
+  El tráfico en claro no se habilita aquí: en Release el atributo de la
+  aplicación tampoco lo permite.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>
