@@ -172,15 +172,16 @@ dotnet build src/Breb.App/Breb.App.csproj -c Release -p:TargetFrameworks=net10.0
    otra vez. Si ya compensó, la pantalla lo dice en rojo y no hay un segundo
    débito. Para enviarla de nuevo hay que pulsar Transferir otra vez: es otra
    llave, no un duplicado de la que volvió.
-4. Confirmación, dentro de esos 15 s si quiere el camino en que el dinero
-   sale:
+4. Confirmación sin copiar la llave. En la VM, antes de pulsar Transferir:
 
    ```bash
-   ./scripts/confirmar-abono.sh LA-LLAVE http://127.0.0.1:5080
+   git pull
+   ./scripts/vigilar-confirmacion.sh
    ```
 
-   El script entra como `core-bancario` y habla con la API por localhost,
-   dentro de la VM. El teléfono no usa esa URL: el teléfono va por HTTPS.
+   Cuando diga «Armada», en el teléfono pulse Transferir una sola vez.
+   El vigilante llama a `scripts/confirmar-abono.sh` (rol banco, localhost).
+   No reinicia la API ni hace falta otro APK. No abre el 5080 hacia afuera.
 5. «Actualizar saldo (ver confirmación)». `liquidada`: el dinero salió una
    vez. `liberada`: volvió. No se presente el segundo como éxito.
 
